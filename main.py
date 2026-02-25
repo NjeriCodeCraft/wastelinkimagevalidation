@@ -1,16 +1,20 @@
 import os
-os.environ["KERAS_BACKEND"] = "tensorflow"
-
-from fastapi import FastAPI, UploadFile, File
-import tensorflow as tf
-import numpy as np
-from PIL import Image
 import io
 import json
+import numpy as np
+from PIL import Image
+from fastapi import FastAPI, UploadFile, File
+
+# We must set this before importing tensorflow/keras
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
+import tensorflow as tf
+import tf_keras as keras  # This defines 'keras' for your decorator
 
 app = FastAPI()
 
 # 1. Handle the Keras 3 Lambda issue explicitly
+# This now works because 'keras' was imported above
 @keras.utils.register_keras_serializable()
 def preprocess_input(x):
     return x
@@ -19,10 +23,11 @@ def preprocess_input(x):
 model = None
 
 @app.on_event("startup")
-def load_model():
+async def load_model():
     global model
     try:
-        model = tf.keras.models.load_model(
+        # We use keras.models here to match the legacy loading
+        model = keras.models.load_model(
             'wastelink_v1_model.keras',
             custom_objects={'preprocess_input': preprocess_input},
             compile=False
@@ -31,6 +36,10 @@ def load_model():
     except Exception as e:
         print(f"❌ Model Load Failed: {e}")
 
+@app.get("/")
+async def root():
+    return {"message": "WasteLink API is running", "model_loaded": model is not None}
+
 @app.post("/predict")
 async def predict(image: UploadFile = File(...)):
     if model is None:
@@ -38,8 +47,15 @@ async def predict(image: UploadFile = File(...)):
     
     contents = await image.read()
     img = Image.open(io.BytesIO(contents)).convert('RGB').resize((180, 180))
-    img_array = np.expand_dims(tf.keras.preprocessing.image.img_to_array(img), axis=0)
     
-    preds = model(img_array, training=False)
-    # Your logic for labels goes here...
-    return {"status": "success", "raw_prediction": preds.numpy().tolist()}
+    # Convert image to array using keras utilities
+    img_array = keras.utils.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    
+    # Run prediction
+    preds = model.predict(img_array)
+    
+    return {
+        "status": "success", 
+        "raw_prediction": preds.tolist()
+    }
