@@ -11,7 +11,7 @@ import json
 app = FastAPI()
 
 # 1. Handle the Keras 3 Lambda issue explicitly
-@tf.keras.utils.register_keras_serializable()
+@keras.utils.register_keras_serializable()
 def preprocess_input(x):
     return x
 
