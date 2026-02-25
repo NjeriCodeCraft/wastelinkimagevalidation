@@ -26,7 +26,17 @@ model = None
 async def load_model():
     global model
     try:
-        # We use keras.models here to match the legacy loading
+        # This tells Keras 3 how to handle the old 'batch_shape' key
+        from keras.src.layers import InputLayer
+        
+        # We manually patch the InputLayer to accept the old argument
+        original_init = InputLayer.__init__
+        def patched_init(self, *args, **kwargs):
+            if 'batch_shape' in kwargs:
+                kwargs['shape'] = kwargs.pop('batch_shape')
+            original_init(self, *args, **kwargs)
+        InputLayer.__init__ = patched_init
+
         model = keras.models.load_model(
             'wastelink_v1_model.keras',
             custom_objects={'preprocess_input': preprocess_input},
